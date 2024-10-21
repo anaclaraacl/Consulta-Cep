@@ -1,33 +1,41 @@
 import Foundation
+import Alamofire
 
 enum ServiceError: Error {
-    case InvalidURL
-    case DecodableFailure(Error)
+    case invalidURL
+    case decodableFailure(Error)
     case networkError(Error?)
 }
 
 class Service {
     private let baseURL = "https://viacep.com.br/ws/"
     
-    func searchZipCode(with zipCode: String, callback: @escaping (Result<ZipCodeModel, ServiceError>) -> Void){
+    func searchZipCode(cep: String, callback: @escaping (Result<ZipCodeModel, ServiceError>) -> Void) {
         
-        let path = "\(zipCode)/json"
+        guard let url = URL(string: "\(baseURL)\(cep)/json/") else {
+            callback(.failure(.invalidURL))
+            return
+        }
         
-        guard let url = URL(string: baseURL + path) else { return }
-        
-        let task = URLSession.shared.dataTask(with: url) { data, response, error in
-            guard let data = data else {
+        AF.request(url).responseDecodable(of: ZipCodeModel.self) { response in
+            if let error = response.error {
                 callback(.failure(.networkError(error)))
                 return
             }
             
-            do {
-                let adress = try JSONDecoder().decode(ZipCodeModel.self, from: data)
-                callback(.success(adress))
-            } catch {
-                callback(.failure(.DecodableFailure(error)))
+            guard let zipCode = response.value else {
+                if let data = response.data {
+                    do {
+                        let _ = try JSONDecoder().decode([String: String].self, from: data)
+                    } catch {
+                        callback(.failure(.decodableFailure(error)))
+                        return
+                    }
+                }
+                callback(.failure(.networkError(nil)))
+                return
             }
+            callback(.success(zipCode))
         }
-        task.resume()
     }
 }
